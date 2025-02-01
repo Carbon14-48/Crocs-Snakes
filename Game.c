@@ -1,1 +1,1 @@
-#include<stdio.h> /*hhh */BERRICHI MOHAMMED
+#include<stdio.h> /*hhh */
