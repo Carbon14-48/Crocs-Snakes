@@ -169,6 +169,7 @@ void addItem(inventory *inventory, char itemType) {
         inventory->last = newItem;  
         newItem->next=inventory->first;
     }
+     inventory->size++;   
 }
 
 
