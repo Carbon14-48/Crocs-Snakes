@@ -3,15 +3,15 @@
 #include <time.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <stdbool.h>
 #define MAP_WIDTH 100  // Set this as a fixed large value for the width
-
 // Function to get the terminal height
 int getTerminalHeight() {
     struct winsize w;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
     return w.ws_row;  // Height of the terminal screen
 }
-
+#define MAX_INVENTORY_SIZE 3
 // Define terrain types
 #define SAFE_LAND 'S'
 #define RIVER 'R'
@@ -126,6 +126,52 @@ void displayMap(Node* map[getTerminalHeight()][MAP_WIDTH]) {
         printf("\n");
     }
 }
+typedef struct item{
+    char itemType;
+    struct item *next;
+}item;
+typedef struct{
+item *first;
+item *last;
+int size;
+}inventory;
+typedef struct Player {
+    char name[10];      // player name
+    int health;         // player life points
+    bool alive;         // if the player is still alive
+    int score;          // current player score
+    int x, y;           //position in the game world
+    inventory *inventory;    // player ressources
+}
+item* createItem(char itemType) {
+    item *newItem = (Item *)malloc(sizeof(item));
+    newItem->itemType = itemType;
+    newItem->next = NULL;
+    return newItem;
+}
+
+// Function to add an item to the inventory
+void addItem(inventory *inventory, char itemType) {
+    if( inventory ==NULL){
+        return;
+    }
+    if (inventory->size > MAX_INVENTORY_SIZE) {
+        printf("Inventory is full! Cannot add more items\n");
+        return;
+    }
+      item *newItem = createItem(itemType);
+     if (inventory->size == 0) {
+       inventory->first = newItem;  
+        inventory->last = newItem; 
+        inventory->first->next = newItem;
+    } else {
+        inventory->last->next = newItem;  
+        inventory->last = newItem;  
+        newItem->next=inventory->first;
+    }
+}
+
+
 
 int main() {
     // Create the map as a 2D array of Node pointers
