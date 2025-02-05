@@ -166,7 +166,7 @@ void displayGraph(Node* graph[ROWS][COLS], Player *player) {
             else if (graph[i][j]->type == PIERCING_POINT)
                 printf("! ");
             else if (graph[i][j]->type == BULLET)
-                printf("-> ");
+                printf("* ");
             else if (graph[i][j]->type == HEALTH_PACK)
                 printf("H ");
             else
@@ -177,26 +177,45 @@ void displayGraph(Node* graph[ROWS][COLS], Player *player) {
     printf("%s\n", player->message); // Display the message
 }
 
-void shootBullet(Player *player, Node *graph[ROWS][COLS]) {
+void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
     if (!player->hasGun) {
-        strcpy(player->message, "Vous n'avez pas d'arme !");
+        strcpy(player->message, "❌ Vous n'avez pas d'arme !");
         return;
     }
-    
+
     Node *bulletPos = player->position;
-    while (bulletPos->right && bulletPos->right->type == SAFE_LAND) {
-        bulletPos = bulletPos->right;
+    int dx = 0, dy = 0;
+
+    // Définir la direction du tir
+    if (direction == 'z') dx = -1; // Haut
+    else if (direction == 's') dx = 1;  // Bas
+    else if (direction == 'q') dy = -1; // Gauche
+    else if (direction == 'd') dy = 1;  // Droite
+
+    // Tirer jusqu'à heurter un obstacle
+    while (1) {
+        int newX = bulletPos->x + dx;
+        int newY = bulletPos->y + dy;
+
+        if (newX < 0 || newX >= ROWS || newY < 0 || newY >= COLS) break; // Sortie du terrain
+        if (graph[newX][newY]->type != SAFE_LAND) {
+            if (graph[newX][newY]->type == CROCODILE || graph[newX][newY]->type == SNAKE) {
+                strcpy(player->message, "🎯 L'ennemi a été touché !");
+                graph[newX][newY]->type = SAFE_LAND;
+            } else {
+                strcpy(player->message, "💥 La balle a heurté un obstacle !");
+            }
+            break;
+        }
+
+        // Faire avancer la balle
+        bulletPos = graph[newX][newY];
         bulletPos->type = BULLET;
         displayGraph(graph, player);
         usleep(100000);
         bulletPos->type = SAFE_LAND;
     }
-    if (bulletPos->right && (bulletPos->right->type == CROCODILE || bulletPos->right->type == SNAKE)) {
-        strcpy(player->message, "💥 L'ennemi est touché !");
-        bulletPos->right->type = SAFE_LAND;
-    }
 }
-
 void addInventoryItem(Player *player, const char *itemName) {
     InventoryItem *newItem = (InventoryItem*)malloc(sizeof(InventoryItem));
     strcpy(newItem->name, itemName);
@@ -314,7 +333,11 @@ int main() {
         printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de santé, [x] Quitter\n");
         input = _getch();
         if (input == 'x') break;
-        if (input == 'f') shootBullet(&player, graph);
+        if (input == 'f') {
+        printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
+        char shootDirection = _getch();
+        shootBullet(&player, graph, shootDirection);
+        }
         else if (input == 'i') displayInventory(&player);
         else if (input == 'u') useHealthPack(&player);
         else movePlayer(&player, input, graph);
