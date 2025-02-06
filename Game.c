@@ -5,6 +5,7 @@
 #ifdef _WIN32
     #include <conio.h>
     #include <windows.h>
+    #include <mmsystem.h>
     #define CLEAR "cls"
     void sleep(unsigned milliseconds) {
         Sleep(milliseconds);
@@ -278,11 +279,15 @@ void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
 
     if (newPos == player->position) {
         return; // No movement
-    }
-
+    } 
     if (newPos->type == THORNS) {
-        strcpy(player->message, "🚧 Vous ne pouvez pas vous déplacer ici !");
-        player->health -= 10;
+    strcpy(player->message, "🚧 Vous ne pouvez pas vous déplacer ici !");
+    player->health -= 10;
+#ifdef _WIN32
+    Beep(800, 300); // Joue un son (Windows uniquement)
+#endif
+
+
     } else if (newPos->type == CROCODILE || newPos->type == SNAKE) {
         strcpy(player->message, "🦊 Vous avez rencontré un ennemi !");
         player->health -= 20;
