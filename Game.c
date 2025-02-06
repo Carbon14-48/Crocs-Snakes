@@ -335,7 +335,7 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
     while (1) {
         displayGraph(graph, player);
         printf("PV: %d\n", player->health);
-        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de santé, [x] Quitter\n");
+        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de sante, [x] Quitter\n");
         input = _getch();
         if (input == 'x') break;
         if (input == 'f') {
