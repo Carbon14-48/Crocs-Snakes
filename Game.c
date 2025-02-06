@@ -24,7 +24,19 @@
         tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
         return ch;
     }
-#endif
+#endif 
+#define RESET   "\x1b[0m"
+#define RED     "\x1b[31m"
+#define GREEN   "\x1b[32m"
+#define YELLOW  "\x1b[33m"
+#define BLUE    "\x1b[34m"
+#define MAGENTA "\x1b[35m"
+#define CYAN    "\x1b[36m"
+#define WHITE   "\x1b[37m"
+#define BOLD    "\x1b[1m"
+#define UNDERLINE "\x1b[4m"
+#define ROWS 20
+#define COLS 30
 
 #define ROWS 20
 #define COLS 30
@@ -145,37 +157,37 @@ void initGraph(Node* graph[ROWS][COLS], Player *player) {
     stackInit(&player->lastSafePositions); // Initialize the stack
     pushSafePosition(player); // Push the initial safe position
     strcpy(player->message, ""); // Initialize the message
-}
-
+} 
 void displayGraph(Node* graph[ROWS][COLS], Player *player) {
     system(CLEAR);
     for (int i = 0; i < ROWS; i++) {
         for (int j = 0; j < COLS; j++) {
             if (graph[i][j] == player->position)
-                printf("P ");
+                printf(BOLD GREEN "P " RESET); // Joueur en gras et vert
             else if (graph[i][j]->type == CROCODILE)
-                printf("C ");
+                printf(RED "C " RESET); // Crocodile en rouge
             else if (graph[i][j]->type == SNAKE)
-                printf("S ");
+                printf(YELLOW "S " RESET); // Serpent en jaune
             else if (graph[i][j]->type == THORNS)
                 printf("# ");
             else if (graph[i][j]->type == FOOD)
-                printf("F ");
+                printf(GREEN "F " RESET); // Nourriture en vert
             else if (graph[i][j]->type == GUN)
-                printf("G ");
+                printf(BLUE "G " RESET); // Arme en bleu
             else if (graph[i][j]->type == PIERCING_POINT)
-                printf("! ");
+                printf(MAGENTA "! " RESET); // Point perçant en magenta
             else if (graph[i][j]->type == BULLET)
-                printf("* ");
+                printf(CYAN "* " RESET); // Balle en cyan
             else if (graph[i][j]->type == HEALTH_PACK)
-                printf("H ");
+                printf(WHITE "H " RESET); // Pack de santé en blanc
             else
                 printf(". ");
         }
         printf("\n");
     }
-    printf("%s\n", player->message); // Display the message
+    printf("%s\n", player->message); // Afficher le message
 }
+
 
 void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
     if (!player->hasGun) {
@@ -318,6 +330,28 @@ void dangerWarning(Player *player, Node *graph[ROWS][COLS]) {
         }
     }
 }
+void gameLoop(Node* graph[ROWS][COLS], Player *player) {
+    char input;
+    while (1) {
+        displayGraph(graph, player);
+        printf("PV: %d\n", player->health);
+        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de santé, [x] Quitter\n");
+        input = _getch();
+        if (input == 'x') break;
+        if (input == 'f') {
+            printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
+            char shootDirection = _getch();
+            shootBullet(player, graph, shootDirection);
+        }
+        else if (input == 'i') displayInventory(player);
+        else if (input == 'u') useHealthPack(player);
+        else movePlayer(player, input, graph);
+        
+        dangerWarning(player, graph); // Check for danger
+    }
+
+    printf("\nFin du jeu. Merci d'avoir joué !\n");
+}
 
 int main() {
     Node* graph[ROWS][COLS];
@@ -326,26 +360,7 @@ int main() {
 
     initGraph(graph, &player);
     
-    char input;
-    while (1) {
-        displayGraph(graph, &player);
-        printf("PV: %d\n", player.health);
-        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de santé, [x] Quitter\n");
-        input = _getch();
-        if (input == 'x') break;
-        if (input == 'f') {
-        printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
-        char shootDirection = _getch();
-        shootBullet(&player, graph, shootDirection);
-        }
-        else if (input == 'i') displayInventory(&player);
-        else if (input == 'u') useHealthPack(&player);
-        else movePlayer(&player, input, graph);
-        
-        dangerWarning(&player, graph); // Check for danger
-    }
+    gameLoop(graph, &player); // Appel de la boucle principale du jeu
 
-    printf("\nFin du jeu. Merci d'avoir joué !\n");
     return 0;
 }
-    
