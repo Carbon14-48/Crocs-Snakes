@@ -530,6 +530,7 @@ void handleSnakeShooting(Node* graph[ROWS][COLS], Player* player, int* cooldown)
 }
 void gameLoop(Node* graph[ROWS][COLS], Player *player) {
     char input;
+    int snakeShootCooldown=0;
     while (1) {
         handleSnakeShooting(graph, player, &snakeShootCooldown);
         moveCrocodile(graph);
