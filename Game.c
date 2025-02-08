@@ -25,7 +25,7 @@
         tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
         return ch;
     }
-#endif 
+#endif
 #define RESET   "\x1b[0m"
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -42,15 +42,16 @@
 #define ROWS 20
 #define COLS 30
 
-typedef enum { 
+typedef enum {
     SAFE_LAND,
     THORNS,
+    WALL,
     CROCODILE,
     SNAKE,
     FOOD,
     GUN,
-    PIERCING_POINT,
     BULLET,
+    AXE,
     HEALTH_PACK
 } CellType;
 
@@ -67,6 +68,7 @@ typedef struct InventoryItem {
     int quantity;
     struct InventoryItem *next;
 } InventoryItem;
+
 typedef struct QueueNode {
     Node *position;
     struct QueueNode *next;
@@ -76,6 +78,70 @@ typedef struct {
     QueueNode *front, *rear;
 } Queue;
 
+typedef struct StackNode {
+    Node* position;
+    struct StackNode *next;
+} StackNode;
+
+typedef struct {
+    StackNode *top;
+} Stack;
+
+typedef struct {
+    char name[20];
+    Node *position;
+    int health;
+    int score;
+    InventoryItem *inventory;
+    int hasGun;
+    Stack lastSafePositions;
+    char message[100];
+} Player;
+
+// Then, all function prototypes grouped by functionality
+// Node functions
+Node* createNode(int x, int y, CellType type);
+
+// Queue functions
+void initQueue(Queue *queue);
+void enqueue(Queue *queue, Node *position);
+Node* dequeue(Queue *queue);
+
+// Stack functions
+void stackInit(Stack *stack);
+void stackPush(Stack *stack, Node *position);
+Node* stackPop(Stack *stack);
+void pushSafePosition(Player *player);
+Node* popSafePosition(Player *player);
+
+// Inventory functions
+void addInventoryItem(Player *player, const char *itemName);
+int removeInventoryItem(Player *player, const char *itemName);
+void displayInventory(Player *player);
+void useHealthPack(Player *player);
+
+// Movement and combat functions
+void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]);
+void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction);
+void breakThorns(Player *player, Node *graph[ROWS][COLS], char direction);
+void checkCrocodileAttack(Node* crocodileNode, Player* player);
+
+// Enemy functions
+void initCrocodileMovement(Node* graph[ROWS][COLS]);
+void moveCrocodile(Node* graph[ROWS][COLS], Player* player);
+void snakeShoot(Node* graph[ROWS][COLS], Player *player, Node* snake);
+void handleSnakeShooting(Node* graph[ROWS][COLS], Player* player, int* cooldown);
+
+// Game state functions
+void initGraphFromMap(Node* graph[ROWS][COLS], Player *player, const char* map);
+void displayGraph(Node* graph[ROWS][COLS], Player *player);
+void dangerWarning(Player *player, Node *graph[ROWS][COLS]);
+void gameLoop(Node* graph[ROWS][COLS], Player *player);
+
+// Global variables
+Node *crocodileNode;
+Node *snakeNode;
+Queue crocodileQueue;
 void initQueue(Queue *queue) {
     queue->front = queue->rear = NULL;
 }
@@ -108,58 +174,7 @@ Node* dequeue(Queue *queue) {
 }
 Queue crocodileQueue;
 
-void initCrocodileMovement(Node* graph[ROWS][COLS]) {
 
-    initQueue(&crocodileQueue);
-
-    // More dynamic movement pattern
-    enqueue(&crocodileQueue, graph[4][8]);
-    enqueue(&crocodileQueue, graph[4][9]);
-    enqueue(&crocodileQueue, graph[5][9]);
-    enqueue(&crocodileQueue, graph[5][8]);
-    enqueue(&crocodileQueue, graph[6][8]);
-    enqueue(&crocodileQueue, graph[6][7]);
-}
-void moveCrocodile(Node* graph[ROWS][COLS]) {
-    static Node *currentCrocodilePos = NULL; // Keep track of last position
-
-    // Get the next position from the queue
-    Node *newPos = dequeue(&crocodileQueue);
-    if (newPos == NULL) return;
-
-    // Clear old position if it exists
-    if (currentCrocodilePos != NULL) {
-        currentCrocodilePos->type = SAFE_LAND;
-    }
-
-    // Move to the new position
-    newPos->type = CROCODILE;
-    currentCrocodilePos = newPos; // Update last known position
-
-    // Re-enqueue to maintain loop movement
-    enqueue(&crocodileQueue, newPos);
-}
-
-// Stack implementation to store last safe positions
-typedef struct StackNode {
-    Node* position;
-    struct StackNode *next;
-} StackNode;
-
-typedef struct {
-    StackNode *top;
-} Stack;
-
-typedef struct {
-    char name[20];
-    Node *position;
-    int health;
-    int score;
-    InventoryItem *inventory;
-    int hasGun;
-    Stack lastSafePositions;
-    char message[100]; // Message to display
-} Player;
 
 // Stack functions
 void stackInit(Stack *stack) {
@@ -200,87 +215,263 @@ void pushSafePosition(Player *player) {
 Node* popSafePosition(Player *player) {
     return stackPop(&player->lastSafePositions);
 }
+typedef struct DifficultyNode {
+    char name[20];
+    int numCrocodiles;
+    int monsterHealth;
+    struct DifficultyNode *left;
+    struct DifficultyNode *right;
+} DifficultyNode;
 
-void initGraph(Node* graph[ROWS][COLS], Player *player) {
-    srand(time(0));
+// Function to create a difficulty node
+DifficultyNode* createDifficultyNode(const char* name, int numCrocodiles, int monsterHealth) {
+    DifficultyNode* newNode = (DifficultyNode*)malloc(sizeof(DifficultyNode));
+    strcpy(newNode->name, name);
+    newNode->numCrocodiles = numCrocodiles;
+    newNode->monsterHealth = monsterHealth;
+    newNode->left = NULL;
+    newNode->right = NULL;
+    return newNode;
+}
 
-    for (int i = 0; i < ROWS; i++) {
-        for (int j = 0; j < COLS; j++) {
-            graph[i][j] = createNode(i, j, (rand() % 10 < 2) ? THORNS : SAFE_LAND);
+// Initialize difficulty selection tree
+DifficultyNode* initDifficultyTree() {
+    DifficultyNode *root = createDifficultyNode("Select Difficulty", 0, 0);
+
+    root->left = createDifficultyNode("Easy", 2, 3);  // 2 crocs, 3 HP each
+    root->right = createDifficultyNode("Hard", 4, 5); // 4 crocs, 5 HP each
+
+    return root;
+}
+
+// Function to choose difficulty
+DifficultyNode* chooseDifficulty(DifficultyNode* root) {
+    DifficultyNode* current = root;
+    char choice;
+
+    while (current->left && current->right) {
+        printf("%s: [G]auche (%s) / [D]roite (%s)\n", current->name, current->left->name, current->right->name);
+        choice = _getch();
+        if (choice == 'g' || choice == 'G') {
+            current = current->left;
+        } else if (choice == 'd' || choice == 'D') {
+            current = current->right;
         }
     }
 
-    graph[4][8]->type = CROCODILE;
-    graph[4][8]->health = 2;
-    graph[10][15]->type = SNAKE;
-    graph[10][15]->health = 3;
-    graph[8][11]->type = THORNS;
-    graph[12][12]->type = FOOD;
-    graph[5][5]->type = GUN;
-    graph[7][11]->type = PIERCING_POINT;
-    graph[3][7]->type = HEALTH_PACK;
+    return current;
+}
 
-    for (int i = 0; i < ROWS; i++) {
-        for (int j = 0; j < COLS; j++) {
-            if (i > 0) graph[i][j]->up = graph[i-1][j];
-            if (i < ROWS-1) graph[i][j]->down = graph[i+1][j];
-            if (j > 0) graph[i][j]->left = graph[i][j-1];
-            if (j < COLS-1) graph[i][j]->right = graph[i][j+1];
+
+typedef enum {
+    SMALL,
+    BIG
+} MapSize;
+
+typedef struct {
+    int x;
+    int y;
+} Position;
+
+// Predefined positions for crocodiles
+Position smallMapPositions[] = {
+    {4, 4},  // First crocodile
+    {8, 8},  // Second crocodile
+    {6, 6},  // Third crocodile
+    {7, 7}   // Fourth crocodile
+};
+
+Position bigMapPositions[] = {
+    {4, 4},   // First crocodile
+    {8, 8},   // Second crocodile
+    {12, 12}, // Third crocodile
+    {6, 6},   // Fourth crocodile
+    {10, 10}, // Fifth crocodile
+    {14, 14}  // Sixth crocodile
+};
+
+// Modified crocodile structure to handle multiple crocodiles
+typedef struct {
+    Node* node;
+    Queue movements;
+} Crocodile;
+
+// Global array to store multiple crocodiles
+Crocodile* crocodiles = NULL;
+int numActiveCrocodiles = 0;
+
+// Function to initialize movement pattern for a specific crocodile
+void initCrocodileMovementPattern(Queue* queue, Position basePos) {
+    // Create a circular movement pattern around the base position
+    Node* pos1 = createNode(basePos.x, basePos.y, CROCODILE);
+    Node* pos2 = createNode(basePos.x, basePos.y + 1, CROCODILE);
+    Node* pos3 = createNode(basePos.x + 1, basePos.y + 1, CROCODILE);
+    Node* pos4 = createNode(basePos.x + 1, basePos.y, CROCODILE);
+
+    enqueue(queue, pos1);
+    enqueue(queue, pos2);
+    enqueue(queue, pos3);
+    enqueue(queue, pos4);
+}
+
+// Function to place crocodiles in predefined positions
+void placeCrocodiles(Node* graph[ROWS][COLS], DifficultyNode* difficultySettings, MapSize mapSize) {
+    Position* positions = (mapSize == SMALL) ? smallMapPositions : bigMapPositions;
+
+    // Allocate array for crocodiles
+    crocodiles = malloc(sizeof(Crocodile) * difficultySettings->numCrocodiles);
+    numActiveCrocodiles = difficultySettings->numCrocodiles;
+
+    // Place each crocodile
+    for (int i = 0; i < difficultySettings->numCrocodiles; i++) {
+        int x = positions[i].x;
+        int y = positions[i].y;
+
+        if (x < ROWS && y < COLS && graph[x][y]->type == SAFE_LAND) {
+            graph[x][y]->type = CROCODILE;
+            graph[x][y]->health = difficultySettings->monsterHealth;
+
+            // Initialize crocodile structure
+            crocodiles[i].node = graph[x][y];
+            initQueue(&crocodiles[i].movements);
+            initCrocodileMovementPattern(&crocodiles[i].movements, positions[i]);
         }
     }
-    player->score=0;
-    player->position = graph[1][1];
+}
+
+// Modified movement function to handle all crocodiles
+void moveAllCrocodiles(Node* graph[ROWS][COLS], Player* player) {
+    for (int i = 0; i < numActiveCrocodiles; i++) {
+        if (crocodiles[i].node->type == CROCODILE) {
+            Node* newPos = dequeue(&crocodiles[i].movements);
+            if (newPos != NULL) {
+                // Clear old position
+                crocodiles[i].node->type = SAFE_LAND;
+
+                // Update new position
+                graph[newPos->x][newPos->y]->type = CROCODILE;
+                graph[newPos->x][newPos->y]->health = crocodiles[i].node->health;
+                crocodiles[i].node = graph[newPos->x][newPos->y];
+
+                // Re-enqueue the position for continuous movement
+                enqueue(&crocodiles[i].movements, newPos);
+
+                // Check for attacks
+                checkCrocodileAttack(crocodiles[i].node, player);
+            }
+        }
+    }
+}
+
+
+const char *Gamemap[2] ={
+    "+++++++++++++++\n"
+    "+P    G       +\n"
+    "+  #  +   A   +\n"
+    "+     C       +\n"
+    "+     +   S   +\n"
+    "+  H          +\n"
+    "+     +       +\n"
+    "+  F          +\n"
+    "+             +\n"
+    "+++++++++++++++",
+    "+++++++++++++++++++++++++++++\n"
+    "+ P                         +\n"
+    "+++++++++++++   +++++++++++++\n"
+    "+A                         H+\n"
+    "++++++++++++++++++#++++++++++\n"
+    "+ G   #                     +\n"
+    "+++++++++++++++++++++  ++++++\n"
+    "+                           +\n"
+    "+            C              +\n"
+    "+++++ +++++++++++++++++++++++\n"
+    "+ A               #         +\n"
+    "++++++++++++++++++++++++ ++++\n"
+    "+                           +\n"
+    "+  +       S      +         +\n"
+    "+                           +\n"
+    "++  +++++++++++++++++++++++++\n"
+    "+                       +   +\n"
+    "+      F                    +\n"
+    "+++++++++++++++++++++++++++++"}
+;/*"+++++++++++++++++++++++++++++\n"
+    "+ P                         +\n"
+    "+++++++++++++   +++++++++++++\n"
+    "+A                         H+\n"
+    "++++++++++++++++++#++++++++++\n"
+    "+ G   #                     +\n"
+    "+++++++++++++++++++++  ++++++\n"
+    "+                           +\n"
+    "+            C              +\n"
+    "+++++ +++++++++++++++++++++++\n"
+    "+ A               #         +\n"
+    "++++++++++++++++++++++++ ++++\n"
+    "+                           +\n"
+    "+  +       S      +         +\n"
+    "+                           +\n"
+    "++  +++++++++++++++++++++++++\n"
+    "+                       +   +\n"
+    "+      F                    +\n"
+    "+++++++++++++++++++++++++++++"*/
+void initGraphFromMap(Node* graph[ROWS][COLS], Player *player,DifficultyNode* difficultySettings, MapSize mapSize) {
+    int row = 0, col = 0;
+    const char *map = (mapSize == SMALL) ? Gamemap[0] : Gamemap[1];
+
+    // Initialize the graph with safe land
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            graph[i][j] = createNode(i, j, SAFE_LAND);
+        }
+    }
+
+    // Parse the map string
+    for (int i = 0; map[i] != '\0'; i++) {
+        if (map[i] == '\n') {
+            row++;
+            col = 0;
+            continue;
+        }
+
+        // Set the type of the current cell based on the map character
+        switch (map[i]) {
+            case '+': graph[row][col]->type = WALL; break;
+            case '#': graph[row][col]->type = THORNS; break;
+            case 'S':
+                graph[row][col]->type = SNAKE;
+                graph[row][col]->health = 3;
+                snakeNode = graph[row][col];
+                break;
+            case 'P':
+                graph[row][col]->type = SAFE_LAND;
+                player->position = graph[row][col];
+                break;
+            case 'G': graph[row][col]->type = GUN; break;
+            case 'A': graph[row][col]->type = AXE; break;
+            case 'H': graph[row][col]->type = HEALTH_PACK; break;
+            case 'F': graph[row][col]->type = FOOD; break;
+            default: graph[row][col]->type = SAFE_LAND; break;
+        }
+        col++;
+    }
+
+    // Link nodes to their neighbors
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            if (i > 0) graph[i][j]->up = graph[i - 1][j];
+            if (i < ROWS - 1) graph[i][j]->down = graph[i + 1][j];
+            if (j > 0) graph[i][j]->left = graph[i][j - 1];
+            if (j < COLS - 1) graph[i][j]->right = graph[i][j + 1];
+        }
+    }
+    placeCrocodiles(graph, difficultySettings, mapSize);
+
+    // Initialize player properties
     player->health = 100;
+    player->score = 0;
     player->inventory = NULL;
     player->hasGun = 0;
-    stackInit(&player->lastSafePositions); // Initialize the stack
-    pushSafePosition(player); // Push the initial safe position
-    strcpy(player->message, ""); // Initialize the message
-} 
-void displayGraph(Node* graph[ROWS][COLS], Player *player) {
-    system(CLEAR);
-    for (int i = 0; i < ROWS; i++) {
-        for (int j = 0; j < COLS; j++) {
-           if (graph[i][j] == player->position) {
-            printf(BOLD GREEN "P " RESET); // Joueur en gras et vert
-            
-        }
-        else{
-        switch (graph[i][j]->type) {
-            case CROCODILE:
-                printf(RED "C " RESET); // Crocodile en rouge
-                break;
-            case SNAKE:
-                printf(YELLOW "S " RESET); // Serpent en jaune
-                break;
-            case THORNS:
-                printf("# ");
-                break;
-            case FOOD:
-                printf(GREEN "F " RESET); // Nourriture en vert
-                break;
-            case GUN:
-                printf(BLUE "G " RESET); // Arme en bleu
-                break;
-            case PIERCING_POINT:
-                printf(MAGENTA "! " RESET); // Point perçant en magenta
-                break;
-            case BULLET:
-                printf(CYAN "* " RESET); // Balle en cyan
-                break;
-            case HEALTH_PACK:
-                printf(WHITE "H " RESET); // Pack de santé en blanc
-                break;
-            default:
-                printf(". "); // Terrain normal
-                break;
-        }
-    }
-    }
-    printf("\n");
-}
-    printf("Score: %d | PV: %d\n", player->score, player->health);
-    printf("%s\n", player->message); // Afficher le message
+    stackInit(&player->lastSafePositions);
+    strcpy(player->message, "");
 }
 void snakeShoot(Node* graph[ROWS][COLS], Player *player, Node* snake) {
     int directions[4][2] = {{-1,0}, {1,0}, {0,-1}, {0,1}}; // up, down, left, right
@@ -319,6 +510,35 @@ void snakeShoot(Node* graph[ROWS][COLS], Player *player, Node* snake) {
         usleep(50000);
         bulletPos->type = SAFE_LAND;
     }
+}
+void breakThorns(Player *player, Node *graph[ROWS][COLS], char direction) {
+    Node *targetNode = NULL;
+
+    // Determine target node based on direction
+    if (direction == 'z' && player->position->up) targetNode = player->position->up;
+    if (direction == 's' && player->position->down) targetNode = player->position->down;
+    if (direction == 'q' && player->position->left) targetNode = player->position->left;
+    if (direction == 'd' && player->position->right) targetNode = player->position->right;
+
+    // Check if target node exists and is thorns
+    if (!targetNode || targetNode->type != THORNS) {
+        strcpy(player->message, "❌ Aucunes épines à casser dans cette direction !");
+        return;
+    }
+
+    // Check for axe in inventory
+    InventoryItem *current = player->inventory;
+    while (current) {
+        if (strcmp(current->name, "Axe") == 0 && current->quantity > 0) {
+            removeInventoryItem(player, "Axe");
+            targetNode->type = SAFE_LAND;
+            strcpy(player->message, "🪓 Épines cassées avec la hache !");
+            return;
+        }
+        current = current->next;
+    }
+
+    strcpy(player->message, "❌ Vous n'avez pas de hache !");
 }
 
 
@@ -456,7 +676,12 @@ void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
 
     if (newPos == player->position) {
         return; // No movement
-    } 
+    }
+    if (newPos->type == WALL) {
+        strcpy(player->message, "🚫 Vous ne pouvez pas traverser les murs !");
+        return;
+    }
+
     if (newPos->type == THORNS) {
     strcpy(player->message, "🚧 Vous ne pouvez pas vous déplacer ici !");
     player->health -= 10;
@@ -476,7 +701,12 @@ void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
         addInventoryItem(player, "Bullets");
         newPos->type = SAFE_LAND;
         player->hasGun = 1;
-    } else if (newPos->type == FOOD) {
+    }
+    else if (newPos->type == AXE) {
+        strcpy(player->message, "🪓 Vous avez trouvé une hache !");
+        addInventoryItem(player, "Axe");
+        newPos->type = SAFE_LAND;
+    }else if (newPos->type == FOOD) {
             strcpy(player->message, "🍖 Vous avez trouvé de la nourriture !");
             player->health += 20;
             addInventoryItem(player, "Food");
@@ -513,6 +743,11 @@ void dangerWarning(Player *player, Node *graph[ROWS][COLS]) {
     }
 }
 void handleSnakeShooting(Node* graph[ROWS][COLS], Player* player, int* cooldown) {
+
+    // If snake is dead, don't shoot
+     if (!snakeNode || snakeNode->type == SAFE_LAND) {
+        return;
+    }
     if ((*cooldown)++ >= 1) {  // Adjust cooldown if needed
         Node* snake = NULL;
         for (int i = 0; i < ROWS; i++) {
@@ -533,21 +768,37 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
     int snakeShootCooldown=0;
     while (1) {
         handleSnakeShooting(graph, player, &snakeShootCooldown);
-        moveCrocodile(graph);
+         moveAllCrocodiles(graph, player);
         displayGraph(graph, player);
         printf("PV: %d\n", player->health);
-        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de sante, [x] Quitter\n");
+        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de sante,[c] casser, [x] Quitter\n");
         input = _getch();
-        if (input == 'x') break;
-        if (input == 'f') {
-            printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
-            char shootDirection = _getch();
-            shootBullet(player, graph, shootDirection);
-        }
-        else if (input == 'i') displayInventory(player);
-        else if (input == 'u') useHealthPack(player);
-        else movePlayer(player, input, graph);
-        
+        switch (input) {
+            case 'x':
+                return; // Exit game loop
+            case 'f': {
+                printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
+                char shootDirection = _getch();
+                shootBullet(player, graph, shootDirection);
+                break;
+                }
+            case 'i':
+                displayInventory(player);
+                break;
+            case 'u':
+                useHealthPack(player);
+                break;
+            case 'c': {
+                printf("Direction des épines ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
+                char breakDirection = _getch();
+                breakThorns(player, graph, breakDirection);
+                break;
+                }
+            default:
+                movePlayer(player, input, graph);
+                break;
+                }
+
         dangerWarning(player, graph); // Check for danger
         usleep(200000);
     }
@@ -560,9 +811,9 @@ int main() {
     Player player;
     strcpy(player.name, "Héros");
 
-    initGraph(graph, &player);
+    initGraphFromMap(graph, &player, map1);
     initCrocodileMovement(graph);
-    
+
     gameLoop(graph, &player); // Appel de la boucle principale du jeu
 
     return 0;
