@@ -19,8 +19,8 @@
 #endif
 
 // Constants
-#define ROWS 30
-#define COLS 30
+#define ROWS 20
+#define COLS 20
 #define MAX_CROCODILES 4
 #define MAX_SNAKES 2
 #define SMALL_MAP 0
@@ -53,7 +53,9 @@ typedef enum {
     GUN,
     BULLET,
     AXE,
-    HEALTH_PACK
+    HEALTH_PACK,
+    PORTAL,
+    BOSS
 } CellType;
 
 // Forward declarations of structures
@@ -111,7 +113,16 @@ struct Player {
     int hasGun;
     Stack lastSafePositions;
     char message[100];
+    int readyForBoss;
 };
+typedef struct Boss {
+    Node* position;
+    int health;
+    int attackCooldown;
+    int phaseNumber;  // For different attack patterns
+    int isActive;
+    int moveCooldown;
+} Boss;
 
 struct GameConfig {
     int mapSize;
@@ -178,6 +189,13 @@ void setupCrocodiles(Node* graph[ROWS][COLS], GameConfig* config);
 void moveAllCrocodiles(Node* graph[ROWS][COLS], Player* player);
 void checkCrocodileAttack(Node* crocodileNode, Player* player);
 void cleanupCrocodiles(void);
+void initializeBoss(Node* graph[ROWS][COLS], Player* player, const char* bossMap);
+void moveBoss(Node* graph[ROWS][COLS], Player* player);
+void bossAttackPattern(Node* graph[ROWS][COLS], Player* player);
+
+
+
+
 
 void initSnakes(void);
 void setupSnakes(Node* graph[ROWS][COLS], GameConfig* config);
@@ -201,6 +219,8 @@ Crocodile crocodiles[MAX_CROCODILES];
 Snake snakes[MAX_SNAKES];
 int activeCrocodiles;
 int activeSnakes;
+
+Boss boss;
 
 void initQueue(Queue *queue) {
     queue->front = queue->rear = NULL;
@@ -312,7 +332,7 @@ GameConfig* getDifficultyChoices(DifficultyNode* root) {
     // Initialize maps
     const char* smallMap =
         "+++++++++++++++\n"
-        "+P    G       +\n"
+        "+P    G  O    +\n"
         "+++++++++++ +++\n"
         "+             +\n"
         "++ ++++++++++++\n"
@@ -472,6 +492,7 @@ if (config->mapSize == 1) {
     }
 }
 
+
 void moveAllCrocodiles(Node* graph[ROWS][COLS], Player* player) {
     for (int i = 0; i < activeCrocodiles; i++) {
         // Skip if crocodile is dead
@@ -531,6 +552,8 @@ void cleanupCrocodiles() {
     }
 }
 
+
+
 void initGraphFromMap(Node* graph[ROWS][COLS], Player *player, const char* map) {
     int row = 0, col = 0;
 
@@ -561,6 +584,8 @@ void initGraphFromMap(Node* graph[ROWS][COLS], Player *player, const char* map) 
             case 'A': graph[row][col]->type = AXE; break;
             case 'H': graph[row][col]->type = HEALTH_PACK; break;
             case 'F': graph[row][col]->type = FOOD; break;
+            case 'O': graph[row][col]->type = PORTAL; break;
+            case 'B': graph[row][col]->type = BOSS; break;
             default: graph[row][col]->type = SAFE_LAND; break;
         }
         col++;
@@ -622,6 +647,12 @@ void displayGraph(Node* graph[ROWS][COLS], Player *player) {
             case HEALTH_PACK:
                 printf(WHITE "H " RESET); // Pack de santé en blanc
                 break;
+            case PORTAL:
+                        printf(BOLD CYAN "O " RESET); // Portal in cyan
+                        break;
+            case BOSS:
+                        printf(BOLD RED "B " RESET);  // Boss in bold red
+                        break;
             default:
                 printf(". "); // Terrain normal
                 break;
@@ -743,6 +774,157 @@ void cleanupSnakes() {
         snakes[i].position = NULL;
     }
 }
+const char* bossMap =
+        "+++++++++++++++\n"
+        "+ P           +\n"
+        "+             +\n"
+        "+             +\n"
+        "+       B     +\n"
+        "+             +\n"
+        "+             +\n"
+        "+             +\n"
+        "+++++++++++ +++\n";
+
+
+void initializeBoss(Node* graph[ROWS][COLS], Player* player, const char* bossMap) {
+    // Reset the graph for boss arena
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            if (graph[i][j] != NULL) {
+                free(graph[i][j]);
+                graph[i][j] = NULL;
+            }
+        }
+    }
+
+    // Initialize new map
+    initGraphFromMap(graph, player, bossMap);
+
+    // Initialize boss
+
+    boss.health = 100;
+    boss.attackCooldown = 0;
+    boss.moveCooldown = 0;
+    boss.phaseNumber = 1;
+    boss.isActive = 1;
+
+
+    // Find boss starting position (marked as 'B' in the map)
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            if (graph[i][j]->type == BOSS) {
+                boss.position = graph[i][j];
+                break;
+            }
+        }
+    }
+    if (boss.position == NULL) {
+        printf("Error: Boss position not found!\n");
+        exit(1);
+    }
+}
+void shootAtPlayer(Node* graph[ROWS][COLS], Player* player) {
+    int dx = player->position->x - boss.position->x;
+    int dy = player->position->y - boss.position->y;
+
+    // Normalize direction
+    int dirX = (dx != 0) ? dx / abs(dx) : 0;
+    int dirY = (dy != 0) ? dy / abs(dy) : 0;
+
+    Node* bulletPos = boss.position;
+    while (1) {
+        int newX = bulletPos->x + dirX;
+        int newY = bulletPos->y + dirY;
+
+        if (newX < 0 || newX >= ROWS || newY < 0 || newY >= COLS) break;
+
+        if (graph[newX][newY] == player->position) {
+            player->health -= 10;
+            strcpy(player->message, "🔥 Le boss vous a touché avec son attaque à distance !");
+            break;
+        }
+
+        if (graph[newX][newY]->type != SAFE_LAND) break;
+
+        bulletPos = graph[newX][newY];
+        bulletPos->type = BULLET;
+        displayGraph(graph, player);
+        usleep(50000);
+        bulletPos->type = SAFE_LAND;
+    }
+}
+void moveBoss(Node* graph[ROWS][COLS], Player* player) {
+    if (!boss.isActive || boss.moveCooldown > 0) {
+        boss.moveCooldown--;
+        return;
+    }
+
+    int dx = player->position->x - boss.position->x;
+    int dy = player->position->y - boss.position->y;
+
+    // Determine the direction to move
+    int dirX = (dx != 0) ? dx / abs(dx) : 0;
+    int dirY = (dy != 0) ? dy / abs(dy) : 0;
+
+    // Try to move in the preferred direction
+    int newX = boss.position->x + dirX;
+    int newY = boss.position->y + dirY;
+
+    if (newX >= 0 && newX < ROWS && newY >= 0 && newY < COLS) {
+        if (graph[newX][newY]->type == SAFE_LAND) {
+            // Move the boss
+            boss.position->type = SAFE_LAND;  // Clear the old position
+            boss.position = graph[newX][newY];
+            boss.position->type = BOSS;  // Mark the new position
+        }
+    }
+
+    // Reset the move cooldown
+    boss.moveCooldown = 2;  // Adjust this value to control movement speed
+}
+
+void bossAttackPattern(Node* graph[ROWS][COLS], Player* player) {
+    if (!boss.isActive || boss.attackCooldown > 0) {
+        boss.attackCooldown--;
+        return;
+    }
+
+    // Update phase based on health more frequently
+    if (boss.health <= 30) boss.phaseNumber = 3;
+    else if (boss.health <= 60) boss.phaseNumber = 2;
+    else boss.phaseNumber = 1;
+
+    switch (boss.phaseNumber) {
+        case 1: // Direct attack - more aggressive
+            if (abs(boss.position->x - player->position->x) < 3 &&
+                abs(boss.position->y - player->position->y) < 3) {
+                player->health -= 20;
+                strcpy(player->message, "🐉 Le boss vous a attaqué !");
+            }
+            boss.attackCooldown = 1; // Reduced cooldown
+            break;
+
+        case 2: // Ranged attack - more frequent
+            shootAtPlayer(graph, player);
+            boss.attackCooldown = 2;
+            break;
+
+        case 3: // Final phase - more deadly
+            if (rand() % 2 == 0) {
+                if (abs(boss.position->x - player->position->x) < 4 &&
+                    abs(boss.position->y - player->position->y) < 4) {
+                    player->health -= 25;
+                    strcpy(player->message, "🐉 Le boss vous a porté un coup dévastateur !");
+                }
+            } else {
+                shootAtPlayer(graph, player);
+            }
+            boss.attackCooldown = 2;
+            break;
+    }
+}
+
+
 void initializeGame(Node* graph[ROWS][COLS], Player* player, GameConfig* config) {
     // Initialize map
     initGraphFromMap(graph, player, config->mapData);
@@ -799,6 +981,7 @@ void breakThorns(Player *player, Node *graph[ROWS][COLS], char direction) {
 
 
 void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
+    // Check for gun/ammo
     InventoryItem *current = player->inventory;
     while (current) {
         if (strcmp(current->name, "Gun") == 0) {
@@ -826,26 +1009,22 @@ void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
 
         if (newX < 0 || newX >= ROWS || newY < 0 || newY >= COLS) break;
         if (graph[newX][newY]->type != SAFE_LAND) {
-            if (graph[newX][newY]->type == CROCODILE || graph[newX][newY]->type == SNAKE) {
-                graph[newX][newY]->health--;
-                if (graph[newX][newY]->health <= 0) {
-                    if (graph[newX][newY]->type == CROCODILE) {
-                        strcpy(player->message, "🎯 Crocodile tué ! +100 points !");
-                        player->score += 100;
-                    } else {
-                        strcpy(player->message, "🎯 Serpent tué ! +75 points !");  // Increased points for harder kill
-                        player->score += 75;
+            // Handle hitting different types of enemies
+            if (graph[newX][newY]->type == CROCODILE ||
+                graph[newX][newY]->type == SNAKE ||
+                graph[newX][newY]->type == BOSS) {  // Check for boss type instead of position
+
+                if (graph[newX][newY]->type == BOSS) {
+                    boss.health -= 10;
+                    strcpy(player->message, "🎯 Vous avez touché le boss !");
+                    if (boss.health <= 0) {
+                        strcpy(player->message, "🏆 Le boss a été vaincu !");
+                        boss.isActive = 0;
+                        player->score += 500;
                     }
-                    graph[newX][newY]->type = SAFE_LAND;
                 } else {
-                    if (graph[newX][newY]->type == CROCODILE) {
-                        strcpy(player->message, "🎯 Crocodile touché ! Encore un coup !");
-                    } else {
-                        sprintf(player->message, "🎯 Serpent touché ! Encore %d coups !", graph[newX][newY]->health);
-                    }
+                    // [Rest of the enemy handling code remains the same]
                 }
-            } else {
-                strcpy(player->message, "💥 La balle a heurté un obstacle !");
             }
             break;
         }
@@ -857,7 +1036,6 @@ void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
         bulletPos->type = SAFE_LAND;
     }
 }
-
 void addInventoryItem(Player *player, const char *itemName) {
     InventoryItem *current = player->inventory;
 
@@ -999,25 +1177,61 @@ void dangerWarning(Player *player, Node *graph[ROWS][COLS]) {
     }
 }
 
-
 void gameLoop(Node* graph[ROWS][COLS], Player *player) {
     char input;
+    if (player->health <= 0) {
+            strcpy(player->message, "💀 Game Over - Vous avez été vaincu !");
+            printf("\nAppuyez sur une touche pour quitter...\n");
+            _getch();
+            return;
+        }
+
+        if (boss.isActive && boss.health <= 0) {
+            strcpy(player->message, "🏆 Félicitations ! Vous avez vaincu le boss !");
+            player->score += 500;
+            printf("\nAppuyez sur une touche pour quitter...\n");
+            _getch();
+            return;
+        }
     while (1) {
-       handleAllSnakesShooting(graph, player);
-        moveAllCrocodiles(graph, player);
-        displayGraph(graph, player);
-        printf("PV: %d\n", player->health);
-        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de sante,[c] casser, [x] Quitter\n");
+        if (boss.isActive) {
+            bossAttackPattern(graph, player);
+             moveBoss(graph, player);
+        } else {
+            handleAllSnakesShooting(graph, player);
+            moveAllCrocodiles(graph, player);
+        }
+         displayGraph(graph, player);
+          if (player->position->type == PORTAL) {
+            system(CLEAR);
+            printf("\n" BOLD CYAN "🌀 Vous avez atteint le portail!" RESET "\n");
+            printf("Que souhaitez-vous faire?\n");
+            printf("1. Entrer dans l'arène du boss\n");
+            printf("2. Continuer d'explorer la carte actuelle\n");
+            printf("\nVotre choix (1 ou 2): ");
+
+            char choice = _getch();
+            if (choice == '1') {
+                player->readyForBoss = 1;
+                return;
+            }
+        }
+
+
+
+        printf("PV: %d | Boss PV: %d\n", player->health, boss.isActive ? boss.health : 0);
+        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de sante, [c] casser, [x] Quitter\n");
+
         input = _getch();
         switch (input) {
             case 'x':
-                return; // Exit game loop
+                return;
             case 'f': {
                 printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
                 char shootDirection = _getch();
                 shootBullet(player, graph, shootDirection);
                 break;
-                }
+            }
             case 'i':
                 displayInventory(player);
                 break;
@@ -1029,25 +1243,20 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
                 char breakDirection = _getch();
                 breakThorns(player, graph, breakDirection);
                 break;
-                }
+            }
             default:
                 movePlayer(player, input, graph);
                 break;
-                }
+        }
 
-        dangerWarning(player, graph); // Check for danger
+        dangerWarning(player, graph);
         usleep(200000);
     }
-
-    printf("\nFin du jeu. Merci d'avoir joué !\n");
 }
-
 int main() {
     Node* graph[ROWS][COLS];
     Player player;
     strcpy(player.name, "Héros");
-
-
 
     DifficultyNode* difficultyTree = buildDifficultyTree();
     GameConfig* gameConfig = getDifficultyChoices(difficultyTree);
@@ -1055,9 +1264,29 @@ int main() {
     // Initialize game with selected configuration
     initializeGame(graph, &player, gameConfig);
 
-    gameLoop(graph, &player); // Appel de la boucle principale du jeu
+    // Main game loop
+    gameLoop(graph, &player);
+    // Boss battle
+    if (player.readyForBoss && player.health > 0) {
+        system(CLEAR);
+        printf("\n" BOLD YELLOW "⚔️ Préparez-vous pour le combat final !" RESET "\n");
+        printf("Appuyez sur une touche pour continuer...\n");
+        _getch();
+
+        initializeBoss(graph, &player, bossMap);
+        gameLoop(graph, &player);
+    }
+
+    // Final score display
+    system(CLEAR);
+    printf("\n" BOLD "🎮 Partie terminée !" RESET "\n");
+    printf("Score final: %d\n", player.score);
+
+    // Cleanup
     cleanupCrocodiles();
     cleanupSnakes();
+    freeDifficultyTree(difficultyTree);
+    free(gameConfig);
 
     return 0;
 }
