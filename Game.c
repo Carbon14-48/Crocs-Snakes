@@ -332,51 +332,43 @@ GameConfig* getDifficultyChoices(DifficultyNode* root) {
     // Initialize maps
     const char* smallMap =
         "+++++++++++++++\n"
-        "+P    G  O    +\n"
-        "+++++++++++ +++\n"
-        "+             +\n"
-        "++ ++++++++++++\n"
-        "+             +\n"
-        "+             +\n"
-        "+             +\n"
-        "+             +\n"
-        "+             +\n"
-        "+++++++++++ +++\n"
-        "+             +\n"
-        "+             +\n"
+        "+P    G      A+\n"
+        "+++++++++++#+++\n"
+        "+A            +\n"
+        "+           H +\n"
+        "++#++++++++++++\n"
+        "+ A    #      +\n"
+        "+      #      +\n"
+        "+      #   A  +\n"
+        "+      #      +\n"
+        "+F  A  #      +\n"
+        "+++++++++++#+++\n"
+        "+           ##+\n"
+        "+  F   A   #O+\n"
         "+++++++++++++++";
 
     const char* bigMap =
-        "++++++++++++++++++++++++++++++\n"
-        "+ P                          +\n"
-        "+++++++++++++   ++++++++++++++\n"
-        "+                            +\n"
-        "++++++++++++++++++#+++++++++++\n"
-        "+ G   #                      +\n"
-        "+++++++++++++++++++++  +++++++\n"
-        "+                            +\n"
-        "+                            +\n"
-        "+                            +\n"
-        "+ A               #          +\n"
-        "+                            +\n"
-        "++++++++++++++++++++++++++++++\n"
-        "+  +              +          +\n"
-        "+                            +\n"
-        "+ ++++++++++++++++++++++++++++\n"
-        "++                           +\n"
-        "+      F                     +\n"
-        "+                       +    +\n"
-        "+                            +\n"
-        "+                            +\n"
-        "++++++++++++++++++++++++++++++\n"
-        "+                            +\n"
-        "+                            +\n"
-        "+ ++++++++++++++++++++++++++ +\n"
-        "+                            +\n"
-        "+                            +\n"
-        "++++++++++++++++++++++++++++++\n"
-        "+                            +\n"
-        "++++++++++++++++++++++++++++++" ;
+        "++++++++++++++++++++\n"
+        "+P    A     G    A +\n"
+        "+++++++++++++#++++++\n"
+        "+  A       #    H  +\n"
+        "+           #####  +\n"
+        "++##++++++++++++++++\n"
+        "+     A            +\n"
+        "+           F      +\n"
+        "+  A        #####  +\n"
+        "+H    #    A       +\n"
+        "+#+++#++++#+++ +++++\n"
+        "+       A          +\n"
+        "+ A         ###    +\n"
+        "++++++#+++#+++++++++\n"
+        "+                A +\n"
+        "+  ##       F      +\n"
+        "+      A          +\n"
+        "+   H         #####+\n"
+        "+         #### # O +\n"
+        "++++++++++++++++++++";
+
 
     // Level 0: Map Size
     printf("%s\n", current->prompt);
@@ -450,10 +442,10 @@ void setupCrocodiles(Node* graph[ROWS][COLS], GameConfig* config) {
 
 if (config->mapSize == 1) {
     struct SpawnPoint temp[] = {
-        {3, 7},   // First crocodile
-        {14, 18},  // Second crocodile
-        {17, 22}, // Third crocodile (hard mode only)
-        {22, 26}  // Fourth crocodile (hard mode only)
+        {3, 4},   // First crocodile
+        {11, 4},  // Second crocodile
+        {7, 17}, // Third crocodile (hard mode only)
+        {15, 8}  // Fourth crocodile (hard mode only)
     };
     // Copy values into spawnPoints
     for (int i = 0; i < 4; i++) {
@@ -461,10 +453,10 @@ if (config->mapSize == 1) {
     }
 } else {
     struct SpawnPoint temp[] = {
-        {4, 4},   // First crocodile
-        {11, 13}, // Second crocodile
-        {4, 9},   // Third crocodile (hard mode only)
-        {11, 10}  // Fourth crocodile (hard mode only)
+        {3, 3},   // First crocodile
+        {12, 3}, // Second crocodile
+        {3, 7},   // Third crocodile (hard mode only)
+        {12, 8}  // Fourth crocodile (hard mode only)
     };
     // Copy values into spawnPoints
     for (int i = 0; i < 4; i++) {
@@ -688,8 +680,8 @@ void setupSnakes(Node* graph[ROWS][COLS], GameConfig* config) {
 
     if (config->mapSize == 1) {
     struct SpawnPoint temp[] = {
-        {10, 15},  // First snake
-        {19, 15}    // Second snake (hard mode only)
+        {8, 4},  // First snake
+        {15, 14}    // Second snake (hard mode only)
     };
     // Copy values into spawnPoints
     for (int i = 0; i < 2; i++) {
@@ -697,8 +689,8 @@ void setupSnakes(Node* graph[ROWS][COLS], GameConfig* config) {
     }
     } else {
     struct SpawnPoint temp[] = {
-        {8, 10},  // First snake (example for different map size)
-        {6, 3}    // Second snake (hard mode only)
+        {8, 4},  // First snake (example for different map size)
+        {8, 10}    // Second snake (hard mode only)
     };
     // Copy values into spawnPoints
     for (int i = 0; i < 2; i++) {
@@ -777,13 +769,13 @@ void cleanupSnakes() {
 const char* bossMap =
         "+++++++++++++++\n"
         "+ P           +\n"
-        "+             +\n"
-        "+             +\n"
-        "+       B     +\n"
-        "+             +\n"
-        "+             +\n"
-        "+             +\n"
-        "+++++++++++ +++\n";
+        "+          #  +\n"
+        "+    ++       +\n"
+        "+  ##     B   +\n"
+        "+           H +\n"
+        "+  ##         +\n"
+        "+     F    ## +\n"
+        "+++++++++++++++\n";
 
 
 void initializeBoss(Node* graph[ROWS][COLS], Player* player, const char* bossMap) {
@@ -1012,19 +1004,38 @@ void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
             // Handle hitting different types of enemies
             if (graph[newX][newY]->type == CROCODILE ||
                 graph[newX][newY]->type == SNAKE ||
-                graph[newX][newY]->type == BOSS) {  // Check for boss type instead of position
+                graph[newX][newY] == boss.position) {  // Add boss check here
 
-                if (graph[newX][newY]->type == BOSS) {
+                graph[newX][newY]->health--;
+
+                // Handle different enemy types
+                if (graph[newX][newY] == boss.position) {
                     boss.health -= 10;
                     strcpy(player->message, "🎯 Vous avez touché le boss !");
                     if (boss.health <= 0) {
                         strcpy(player->message, "🏆 Le boss a été vaincu !");
-                        boss.isActive = 0;
                         player->score += 500;
                     }
-                } else {
-                    // [Rest of the enemy handling code remains the same]
                 }
+                else if (graph[newX][newY]->health <= 0) {
+                    if (graph[newX][newY]->type == CROCODILE) {
+                        strcpy(player->message, "🎯 Crocodile tué ! +100 points !");
+                        player->score += 100;
+                    } else {
+                        strcpy(player->message, "🎯 Serpent tué ! +75 points !");
+                        player->score += 75;
+                    }
+                    graph[newX][newY]->type = SAFE_LAND;
+                } else {
+                    if (graph[newX][newY]->type == CROCODILE) {
+                        strcpy(player->message, "🎯 Crocodile touché ! Encore un coup !");
+                    } else {
+                        sprintf(player->message, "🎯 Serpent touché ! Encore %d coups !",
+                               graph[newX][newY]->health);
+                    }
+                }
+            } else {
+                strcpy(player->message, "💥 La balle a heurté un obstacle !");
             }
             break;
         }
@@ -1194,6 +1205,20 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
             return;
         }
     while (1) {
+            if (player->health <= 0) {
+            strcpy(player->message, "💀 Game Over - Vous avez été vaincu !");
+            printf("\nAppuyez sur une touche pour quitter...\n");
+            _getch();
+            return;
+            }
+
+        if (boss.isActive && boss.health <= 0) {
+            strcpy(player->message, "🏆 Félicitations ! Vous avez vaincu le boss !");
+            player->score += 500;
+            printf("\nAppuyez sur une touche pour quitter...\n");
+            _getch();
+            return;
+        }
         if (boss.isActive) {
             bossAttackPattern(graph, player);
              moveBoss(graph, player);
