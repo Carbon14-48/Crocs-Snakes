@@ -9,15 +9,12 @@
     #include <conio.h>
     #include <windows.h>
     #include <mmsystem.h>
-    #include <digitalv.h>
     #define CLEAR "cls"
-    #pragma comment(lib, "winmm.lib")
     #define msleep(x) Sleep(x)
 #else
     #include <termios.h>
     #include <unistd.h>
     #include <stdio.h>
-    #include <stdlib.h>
     #define CLEAR "clear"
     #define msleep(x) usleep((x) * 1000)
 
@@ -75,7 +72,8 @@ typedef enum {
     AXE,
     HEALTH_PACK,
     PORTAL,
-    BOSS
+    BOSS,
+    CHECKPOINT
 } CellType;
 
 // Forward declarations of structures
@@ -115,14 +113,15 @@ struct Queue {
     QueueNode *front, *rear;
 };
 
-struct StackNode {
+typedef struct CheckpointNode {
     Node* position;
-    StackNode *next;
-};
+    struct CheckpointNode* next;
+} CheckpointNode;
 
-struct Stack {
-    StackNode *top;
-};
+typedef struct CheckpointStack {
+    CheckpointNode* top;
+    int size;  // Keep track of size for the 3-checkpoint limit
+} CheckpointStack;
 
 struct Player {
     char name[20];
@@ -131,9 +130,9 @@ struct Player {
     int score;
     InventoryItem *inventory;
     int hasGun;
-    Stack lastSafePositions;
     char message[100];
     int readyForBoss;
+    CheckpointStack checkpoints;  // New field for checkpoint stack
 };
 typedef struct Boss {
     Node* position;
@@ -192,11 +191,10 @@ void enqueue(Queue *queue, Node *position);
 Node* dequeue(Queue *queue);
 
 // Stack operations
-void stackInit(Stack *stack);
-void stackPush(Stack *stack, Node *position);
-Node* stackPop(Stack *stack);
-void pushSafePosition(Player *player);
-Node* popSafePosition(Player *player);
+void handleCheckpoint(Player* player, Node* currentNode);
+void pushCheckpoint(CheckpointStack* stack, Node* position);
+Node* popCheckpoint(CheckpointStack* stack);
+void clearCheckpointStack(CheckpointStack* stack);
 
 // Inventory management
 void addInventoryItem(Player *player, const char *itemName);
@@ -249,8 +247,8 @@ int activeSnakes;
 //HIGH Score
 void addHighScore(const char *name, int score);
 void displayHighScores();
-void saveHighScoresToFile(const char *filename);
-void loadHighScoresFromFile(const char *filename);
+
+
 
 Boss boss;
 
@@ -286,26 +284,6 @@ Node* dequeue(Queue *queue) {
 }
 
 
-// Stack functions
-void stackInit(Stack *stack) {
-    stack->top = NULL;
-}
-
-void stackPush(Stack *stack, Node *position) {
-    StackNode *newNode = (StackNode*)malloc(sizeof(StackNode));
-    newNode->position = position;
-    newNode->next = stack->top;
-    stack->top = newNode;
-}
-
-Node* stackPop(Stack *stack) {
-    if (stack->top == NULL) return NULL;
-    StackNode *topNode = stack->top;
-    Node *position = topNode->position;
-    stack->top = stack->top->next;
-    free(topNode);
-    return position;
-}
 
 Node* createNode(int x, int y, CellType type) {
     Node* newNode = (Node*)malloc(sizeof(Node));
@@ -316,14 +294,80 @@ Node* createNode(int x, int y, CellType type) {
     return newNode;
 }
 
-void pushSafePosition(Player *player) {
-    if (player->position->type == SAFE_LAND) {
-        stackPush(&player->lastSafePositions, player->position);
-    }
+void initCheckpointStack(CheckpointStack* stack) {
+    stack->top = NULL;
+    stack->size = 0;
 }
 
-Node* popSafePosition(Player *player) {
-    return stackPop(&player->lastSafePositions);
+// Push checkpoint to stack
+void pushCheckpoint(CheckpointStack* stack, Node* position) {
+    // Create new checkpoint node
+    CheckpointNode* newNode = (CheckpointNode*)malloc(sizeof(CheckpointNode));
+    newNode->position = position;
+    newNode->next = stack->top;
+
+    if (stack->size >= 3) {
+        CheckpointNode* current = stack->top;
+
+        // Find second-to-last node
+        while (current->next->next != NULL) {
+            current = current->next;
+        }
+
+        // Free last node and set new last node's next to NULL
+        free(current->next);
+        current->next = NULL;
+    }else {
+    stack->size++;
+    }
+
+
+    // Add new checkpoint at top
+    stack->top = newNode;
+}
+
+// Pop checkpoint from stack
+Node* popCheckpoint(CheckpointStack* stack) {
+    if (stack->top == NULL) {
+        return NULL;
+    }
+
+    CheckpointNode* temp = stack->top;
+    Node* position = temp->position;
+    stack->top = temp->next;
+    free(temp);
+    stack->size--;
+
+    return position;
+}
+
+// Function to clear checkpoint stack (for cleanup)
+void clearCheckpointStack(CheckpointStack* stack) {
+    while (stack->top != NULL) {
+        CheckpointNode* temp = stack->top;
+        stack->top = stack->top->next;
+        free(temp);
+    }
+    stack->size = 0;
+}
+
+// Function to handle checkpoint discovery
+void handleCheckpoint(Player* player, Node* currentNode) {
+    pushCheckpoint(&player->checkpoints, currentNode);
+    currentNode->type = SAFE_LAND;  // Replace checkpoint with safe land
+    strcpy(player->message, " Checkpoint sauvegarde! ");
+}
+
+int returnToLastCheckpoint(Player* player) {
+    Node* lastCheckpoint = popCheckpoint(&player->checkpoints);
+    if (lastCheckpoint != NULL) {
+        player->position = lastCheckpoint;
+        strcpy(player->message, " Retour au dernier checkpoint! ");
+        return 1; // Checkpoint available
+    } else {
+        strcpy(player->message, " Aucun checkpoint disponible! ");
+        return 0; // No checkpoint available
+    }
 }
 
 
@@ -364,34 +408,34 @@ GameConfig* getDifficultyChoices(DifficultyNode* root) {
     // Initialize maps
     const char* smallMap =
         "+++++++++++++++\n"
-        "+P    G   O  A+\n"
+        "+P C  G      A+\n"
         "+++++++++++#+++\n"
         "+A            +\n"
         "+           H +\n"
         "++#++++++++++++\n"
-        "+ A    #      +\n"
+        "+ A    #    C +\n"
         "+      #      +\n"
         "+      #   A  +\n"
         "+      #      +\n"
         "+F  A  #      +\n"
         "+++++++++++#+++\n"
-        "+           ##+\n"
-        "+  F   A   #  +\n"
+        "+ C         ##+\n"
+        "+  F   A   # O+\n"
         "+++++++++++++++";
 
     const char* bigMap =
         "++++++++++++++++++++\n"
-        "+P    A     G    A +\n"
+        "+P  C A     G    A +\n"
         "+++++++++++++#++++++\n"
         "+  A       #    H  +\n"
         "+           #####  +\n"
         "++##++++++++++++++++\n"
-        "+     A            +\n"
+        "+     A         C  +\n"
         "+           F      +\n"
         "+  A        #####  +\n"
         "+H    #    A       +\n"
         "+#+++#++++#+++ +++++\n"
-        "+       A          +\n"
+        "+  C    A          +\n"
         "+ A         ###    +\n"
         "++++++#+++#+++++++++\n"
         "+                A +\n"
@@ -559,11 +603,11 @@ void checkCrocodileAttack(Node* crocodileNode, Player* player) {
     if (dx <= 1 && dy <= 1) {
         int damage = config->crocodileDamage;
         player->health -= damage;
-        strcpy(player->message, "🐊 Un crocodile vous a attaqué !");
+        strcpy(player->message, " Un crocodile vous a attaque !");
 
         if (player->health <= 0) {
-            strcpy(player->message, "💀 Vous êtes mort à cause d'un crocodile !");
-            player->position = popSafePosition(player);
+            strcpy(player->message, " Vous etes mort a cause d'un crocodile !");
+            returnToLastCheckpoint(player);
             player->health = 50;
         }
     }
@@ -610,6 +654,7 @@ void initGraphFromMap(Node* graph[ROWS][COLS], Player *player, const char* map) 
             case 'F': graph[row][col]->type = FOOD; break;
             case 'O': graph[row][col]->type = PORTAL; break;
             case 'B': graph[row][col]->type = BOSS; break;
+            case 'C': graph[row][col]->type = CHECKPOINT; break;
             default: graph[row][col]->type = SAFE_LAND; break;
         }
         col++;
@@ -631,7 +676,7 @@ void initGraphFromMap(Node* graph[ROWS][COLS], Player *player, const char* map) 
     player->score = 0;
     player->inventory = NULL;
     player->hasGun = 0;
-    stackInit(&player->lastSafePositions);
+    initCheckpointStack(&player->checkpoints);
     strcpy(player->message, "");
 }
 void displayGraph(Node* graph[ROWS][COLS], Player *player) {
@@ -672,11 +717,14 @@ void displayGraph(Node* graph[ROWS][COLS], Player *player) {
                 printf(WHITE "H " RESET); // Pack de santé en blanc
                 break;
             case PORTAL:
-                        printf(BOLD CYAN "O " RESET); // Portal in cyan
-                        break;
+                printf(BOLD CYAN "O " RESET); // Portal in cyan
+                break;
             case BOSS:
-                        printf(BOLD RED "B " RESET);  // Boss in bold red
-                        break;
+                printf(BOLD RED "B " RESET);  // Boss in bold red
+                break;
+            case CHECKPOINT:
+                printf(BOLD GREEN "C " RESET); // Checkpoint in bold green
+                break;
             default:
                 printf(". "); // Terrain normal
                 break;
@@ -768,7 +816,7 @@ void snakeShoot(Node* graph[ROWS][COLS], Player* player, Snake* snake) {
         if (graph[newX][newY] == player->position) {
              int damage = config->snakeDamage;
             player->health -= damage;
-            strcpy(player->message, "🤕 Touché par un serpent !");
+            strcpy(player->message, " Touch par un serpent !");
             break;
         }
 
@@ -864,7 +912,7 @@ void shootAtPlayer(Node* graph[ROWS][COLS], Player* player) {
 
         if (graph[newX][newY] == player->position) {
             player->health -= 10;
-            strcpy(player->message, "🔥 Le boss vous a touché avec son attaque à distance !");
+            strcpy(player->message, " Le boss vous a touche avec son attaque a distance !");
             break;
         }
 
@@ -923,7 +971,7 @@ void bossAttackPattern(Node* graph[ROWS][COLS], Player* player) {
             if (abs(boss.position->x - player->position->x) < 3 &&
                 abs(boss.position->y - player->position->y) < 3) {
                 player->health -= 20;
-                strcpy(player->message, "🐉 Le boss vous a attaqué !");
+                strcpy(player->message, " Le boss vous a attaque !");
             }
             boss.attackCooldown = 1; // Reduced cooldown
             break;
@@ -938,7 +986,7 @@ void bossAttackPattern(Node* graph[ROWS][COLS], Player* player) {
                 if (abs(boss.position->x - player->position->x) < 4 &&
                     abs(boss.position->y - player->position->y) < 4) {
                     player->health -= 25;
-                    strcpy(player->message, "🐉 Le boss vous a porté un coup dévastateur !");
+                    strcpy(player->message, " Le boss vous a porte un coup devastateur !");
                 }
             } else {
                 shootAtPlayer(graph, player);
@@ -984,7 +1032,7 @@ void breakThorns(Player *player, Node *graph[ROWS][COLS], char direction) {
 
     // Check if target node exists and is thorns
     if (!targetNode || targetNode->type != THORNS) {
-        strcpy(player->message, "❌ Aucunes épines à casser dans cette direction !");
+        strcpy(player->message, " Aucunes epines a casser dans cette direction !");
         return;
     }
 
@@ -994,13 +1042,13 @@ void breakThorns(Player *player, Node *graph[ROWS][COLS], char direction) {
         if (strcmp(current->name, "Axe") == 0 && current->quantity > 0) {
             removeInventoryItem(player, "Axe");
             targetNode->type = SAFE_LAND;
-            strcpy(player->message, "🪓 Épines cassées avec la hache !");
+            strcpy(player->message, " Epines cassees avec la hache !");
             return;
         }
         current = current->next;
     }
 
-    strcpy(player->message, "❌ Vous n'avez pas de hache !");
+    strcpy(player->message, " Vous n'avez pas de hache !");
 }
 
 
@@ -1010,7 +1058,7 @@ void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
     while (current) {
         if (strcmp(current->name, "Gun") == 0) {
             if (current->quantity <= 0) {
-                strcpy(player->message, "❌ Pas de munitions !");
+                strcpy(player->message, " Pas de munitions !");
                 return;
             }
             current->quantity--;
@@ -1043,31 +1091,31 @@ void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
                 // Handle different enemy types
                 if (graph[newX][newY] == boss.position) {
                     boss.health -= 10;
-                    strcpy(player->message, "🎯 Vous avez touché le boss !");
+                    strcpy(player->message, " Vous avez touche le boss !");
                     if (boss.health <= 0) {
-                        strcpy(player->message, "🏆 Le boss a été vaincu !");
+                        strcpy(player->message, " Le boss a ete vaincu !");
                         player->score += 500;
                     }
                 }
                 else if (graph[newX][newY]->health <= 0) {
                     if (graph[newX][newY]->type == CROCODILE) {
-                        strcpy(player->message, "🎯 Crocodile tué ! +100 points !");
+                        strcpy(player->message, " Crocodile tue ! +100 points !");
                         player->score += 100;
                     } else {
-                        strcpy(player->message, "🎯 Serpent tué ! +75 points !");
+                        strcpy(player->message, " Serpent tue ! +75 points !");
                         player->score += 75;
                     }
                     graph[newX][newY]->type = SAFE_LAND;
                 } else {
                     if (graph[newX][newY]->type == CROCODILE) {
-                        strcpy(player->message, "🎯 Crocodile touché ! Encore un coup !");
+                        strcpy(player->message, " Crocodile touche ! Encore un coup !");
                     } else {
-                        sprintf(player->message, "🎯 Serpent touché ! Encore %d coups !",
+                        sprintf(player->message, " Serpent touche ! Encore %d coups !",
                                graph[newX][newY]->health);
                     }
                 }
             } else {
-                strcpy(player->message, "💥 La balle a heurté un obstacle !");
+                strcpy(player->message, " La balle a heurté un obstacle !");
             }
             break;
         }
@@ -1138,9 +1186,9 @@ void displayInventory(Player *player) {
 void useHealthPack(Player *player) {
     if (removeInventoryItem(player, "Health Pack")) {
         player->health += 50;
-        strcpy(player->message, "💊 Vous avez utilisé un pack de santé !");
+        strcpy(player->message, " Vous avez utilise un pack de sante !");
     } else {
-        strcpy(player->message, "Vous n'avez pas de pack de santé !");
+        strcpy(player->message, "Vous n'avez pas de pack de sante !");
     }
 }
 
@@ -1155,12 +1203,12 @@ void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
         return; // No movement
     }
     if (newPos->type == WALL) {
-        strcpy(player->message, "🚫 Vous ne pouvez pas traverser les murs !");
+        strcpy(player->message, " Vous ne pouvez pas traverser les murs !");
         return;
     }
 
     if (newPos->type == THORNS) {
-    strcpy(player->message, "🚧 Vous ne pouvez pas vous déplacer ici !");
+    strcpy(player->message, " Vous ne pouvez pas vous deplacer ici !");
     player->health -= 10;
 #ifdef _WIN32
     Beep(800, 300); // Joue un son (Windows uniquement)
@@ -1168,42 +1216,49 @@ void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
 
 
     } else if (newPos->type == CROCODILE || newPos->type == SNAKE) {
-        strcpy(player->message, "🦊 Vous avez rencontré un ennemi !");
+        strcpy(player->message, " Vous avez rencontre un ennemi !");
         player->health -= 20;
     } else {
         player->position = newPos;
-        pushSafePosition(player); // Store the new safe position
         if (newPos->type == GUN) {
-        strcpy(player->message, "🔫 Vous avez trouvé des munitions !");
+        strcpy(player->message, " Vous avez trouve des munitions !");
         addInventoryItem(player, "Bullets");
         newPos->type = SAFE_LAND;
         player->hasGun = 1;
     }
-    else if (newPos->type == AXE) {
-        strcpy(player->message, "🪓 Vous avez trouvé une hache !");
-        addInventoryItem(player, "Axe");
-        newPos->type = SAFE_LAND;
-    }else if (newPos->type == FOOD) {
-            strcpy(player->message, "🍖 Vous avez trouvé de la nourriture !");
+        else if (newPos->type == AXE) {
+            strcpy(player->message, " Vous avez trouve une hache !");
+            addInventoryItem(player, "Axe");
+            newPos->type = SAFE_LAND;
+    }   else if (newPos->type == FOOD) {
+            strcpy(player->message, " Vous avez trouve de la nourriture !");
             player->health += 20;
             addInventoryItem(player, "Food");
             newPos->type = SAFE_LAND;
-        } else if (newPos->type == HEALTH_PACK) {
-            strcpy(player->message, "💊 Vous avez trouvé un pack de santé !");
+    }    else if (newPos->type == HEALTH_PACK) {
+            strcpy(player->message, " Vous avez trouve un pack de sante !");
             addInventoryItem(player, "Health Pack");
             newPos->type = SAFE_LAND;
-        } else {
+        }else if (newPos->type == CHECKPOINT) {
+                handleCheckpoint(player, newPos);
+        }else {
             strcpy(player->message, "");
         }
     }
 
     // Check for death
-    if (player->health <= 0) {
-        strcpy(player->message, "💀 Vous êtes mort !");
-        player->position = popSafePosition(player); // Respawn at the last safe position
-        player->health = 50; // Reset health
+     if (player->health <= 0) {
+        strcpy(player->message, " Vous etes mort !");
+        if (!returnToLastCheckpoint(player)) {
+            // No checkpoints left, end the game
+            strcpy(player->message, " Vous n'avez plus de checkpoints ! Game Over !");
+            player->health = 0; // Ensure health is 0 to trigger game over
+            return;
+        }
+        player->health = 50; // Reset health after respawning
     }
 }
+
 
 void dangerWarning(Player *player, Node *graph[ROWS][COLS]) {
     int px = player->position->x;
@@ -1212,60 +1267,27 @@ void dangerWarning(Player *player, Node *graph[ROWS][COLS]) {
         for (int j = py - 5; j <= py + 5; j++) {
             if (i >= 0 && i < ROWS && j >= 0 && j < COLS) {
                 if (graph[i][j]->type == CROCODILE || graph[i][j]->type == SNAKE) {
-                    strcpy(player->message, "⚠️ Danger détecté à proximité !");
+                    strcpy(player->message, " Danger detecte a proximite !");
                     return;
                 }
             }
         }
     }
 }
-void playMusic(const char* filename) {
-#ifdef _WIN32
-    char command[256];
-    sprintf(command, "open %s type mpegvideo alias mp3", filename);
-    mciSendString(command, NULL, 0, NULL);
-    mciSendString("play mp3 repeat", NULL, 0, NULL);
-#else
-    char command[256];
-    snprintf(command, sizeof(command), "ffplay -nodisp -autoexit -loop 0 -loglevel quiet %s &", filename);
-    printf("Executing command on Linux: %s\n", command);
-    system(command);
-#endif
-}
-void stopMusic() {
-#ifdef _WIN32
-    mciSendString("close mp3", NULL, 0, NULL);
-#else
-    printf("Stopping music on Linux\n");
-    system("killall ffplay");
-#endif
-}
+
 void gameLoop(Node* graph[ROWS][COLS], Player *player) {
     char input;
-    if (player->health <= 0) {
-            strcpy(player->message, "💀 Game Over - Vous avez été vaincu !");
-            printf("\nAppuyez sur une touche pour quitter...\n");
-            _getch();
-            return;
-        }
 
-        if (boss.isActive && boss.health <= 0) {
-            strcpy(player->message, "🏆 Félicitations ! Vous avez vaincu le boss !");
-            player->score += 500;
-            printf("\nAppuyez sur une touche pour quitter...\n");
-            _getch();
-            return;
-        }
     while (1) {
             if (player->health <= 0) {
-            strcpy(player->message, "💀 Game Over - Vous avez été vaincu !");
+            strcpy(player->message, " Game Over - Vous avez ete vaincu !");
             printf("\nAppuyez sur une touche pour quitter...\n");
             _getch();
             return;
             }
 
         if (boss.isActive && boss.health <= 0) {
-            strcpy(player->message, "🏆 Félicitations ! Vous avez vaincu le boss !");
+            strcpy(player->message, " Felicitations ! Vous avez vaincu le boss !");
             player->score += 500;
             printf("\nAppuyez sur une touche pour quitter...\n");
             _getch();
@@ -1283,7 +1305,7 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
             system(CLEAR);
             printf("\n" BOLD CYAN "🌀 Vous avez atteint le portail!" RESET "\n");
             printf("Que souhaitez-vous faire?\n");
-            printf("1. Entrer dans l'arène du boss\n");
+            printf("1. Entrer dans l'arene du boss\n");
             printf("2. Continuer d'explorer la carte actuelle\n");
             printf("\nVotre choix (1 ou 2): ");
 
@@ -1296,7 +1318,7 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
 
 
 
-        printf("PV: %d | Boss PV: %d\n", player->health, boss.isActive ? boss.health : 0);
+        if (boss.isActive) printf("PV: %d | Boss PV: %d\n", player->health,  boss.health);
         printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire, [u] Utiliser pack de sante, [c] casser, [x] Quitter\n");
 
         input = _getch();
@@ -1316,11 +1338,14 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
                 useHealthPack(player);
                 break;
             case 'c': {
-                printf("Direction des épines ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
+                printf("Direction des epines ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
                 char breakDirection = _getch();
                 breakThorns(player, graph, breakDirection);
                 break;
             }
+            case 'r':
+            returnToLastCheckpoint(player);
+            break;
             default:
                 movePlayer(player, input, graph);
                 break;
@@ -1351,7 +1376,7 @@ void addHighScore(const char *name, int score) {
 
 void displayHighScores() {
     system(CLEAR);
-    printf("\n" BOLD "🏆 HIGH SCORES 🏆" RESET "\n\n");
+    printf("\n" BOLD " HIGH SCORES 🏆" RESET "\n\n");
     HighScoreNode *current = head;
     int rank = 1;
     while (current != NULL && rank <= 10) {  // Show only top 10 scores
@@ -1375,13 +1400,10 @@ int main() {
     char playerName[MAX_NAME_LENGTH];
     int continueGame = 1;
 
-    // Play background music
-    playMusic("theme.wav");
-
     while (continueGame) {
         system(CLEAR);
-        printf("\n" BOLD "🎮 NOUVEAU JEU 🎮" RESET "\n\n");
-        printf("Entrez votre nom (max %d caractères): ", MAX_NAME_LENGTH - 1);
+        printf("\n" BOLD " NOUVEAU JEU " RESET "\n\n");
+        printf("Entrez votre nom (max %d caracteres): ", MAX_NAME_LENGTH - 1);
         scanf("%s", playerName);
 
         Node* graph[ROWS][COLS];
@@ -1400,7 +1422,7 @@ int main() {
         // Boss battle
         if (player.readyForBoss && player.health > 0) {
             system(CLEAR);
-            printf("\n" BOLD YELLOW "⚔️ Préparez-vous pour le combat final !" RESET "\n");
+            printf("\n" BOLD YELLOW " Preparez-vous pour le combat final !" RESET "\n");
             printf("Appuyez sur une touche pour continuer...\n");
             _getch();
 
@@ -1413,7 +1435,7 @@ int main() {
 
         // Display final score and high scores
         system(CLEAR);
-        printf("\n" BOLD "🎮 Partie terminée !" RESET "\n");
+        printf("\n" BOLD " Partie terminée !" RESET "\n");
         printf("Score final: %d\n\n", player.score);
         printf("Appuyez sur une touche pour voir les meilleurs scores...\n");
         _getch();
@@ -1429,9 +1451,6 @@ int main() {
         // Ask to play again
         continueGame = playAgain();
     }
-
-    // Stop the background music
-    stopMusic();
 
     // Final cleanup of high scores list
     while (head != NULL) {
