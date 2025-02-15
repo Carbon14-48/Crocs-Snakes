@@ -1099,11 +1099,11 @@ void shootBullet(Player *player, Node *graph[ROWS][COLS], char direction) {
     Node *bulletPos = player->position;
     int dx = 0, dy = 0;
 
-    if (direction == 'w') dx = -1;
-    else if (direction == 's') dx = 1;
-    else if (direction == 'a') dy = -1;
-    else if (direction == 'd') dy = 1;
-    else dx=1;
+   if (direction == 'z') dy = -1;  // Move up 
+   else if (direction == 's') dy = 1;  // Move down 
+   else if (direction == 'q') dx = -1;  // Move left 
+   else if (direction == 'd') dx = 1;  // Move right
+
 
     while (1) {
         int newX = bulletPos->x + dx;
@@ -1233,10 +1233,10 @@ void useHealthPack(Player *player) {
 
 void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
     Node *newPos = player->position;
-    if (direction == 'w' && player->position->up) newPos = player->position->up;
-    if (direction == 's' && player->position->down) newPos = player->position->down;
-    if (direction == 'a' && player->position->left) newPos = player->position->left;
-    if (direction == 'd' && player->position->right) newPos = player->position->right;
+if (direction == 'z' && player->position->up) newPos = player->position->up;  // Move up
+if (direction == 's' && player->position->down) newPos = player->position->down;  // Move down
+if (direction == 'q' && player->position->left) newPos = player->position->left;  // Move left
+if (direction == 'd' && player->position->right) newPos = player->position->right;  // Move right
 
     if (newPos == player->position) {
         return; // No movement
@@ -1250,8 +1250,9 @@ void movePlayer(Player *player, char direction, Node *graph[ROWS][COLS]) {
     strcpy(player->message, " Vous ne pouvez pas vous deplacer ici !");
     player->health -= 10;
 #ifdef _WIN32
-    Beep(800, 300); // Joue un son (Windows uniquement)
+    Beep(800, 300);  // Play sound (Windows only)
 #endif
+
 
 
     } else if (newPos->type == CROCODILE || newPos->type == SNAKE) {
@@ -1321,93 +1322,106 @@ void gameLoop(Node* graph[ROWS][COLS], Player *player) {
     char input;
 
     while (1) {
-            if (player->health <= 0) {
-            strcpy(player->message, " Game Over - Vous avez ete vaincu !");
-            printf("\nAppuyez sur une touche pour quitter...\n");
-            _getch();
+        // Check if player is defeated
+        if (player->health <= 0) {
+            strcpy(player->message, "Game Over - Vous avez ete vaincu !");
+            printf("\nPress any key to quit...\n");
+            _getch();  // Wait for input
             return;
-            }
+        }
 
+        // Check if boss is defeated
         if (boss.isActive && boss.health <= 0) {
-            strcpy(player->message, " Felicitations ! Vous avez vaincu le boss !");
-            player->score += 500;
-            printf("\nAppuyez sur une touche pour quitter...\n");
-            _getch();
+            strcpy(player->message, "Felicitations! Vous avez vaincu le boss !");
+            player->score += 500;  // Add bonus score for defeating boss
+            printf("\nPress any key to quit...\n");
+            _getch();  // Wait for input
             return;
         }
+
+        // Boss actions if active
         if (boss.isActive) {
-            bossAttackPattern(graph, player);
-             moveBoss(graph, player);
+            bossAttackPattern(graph, player);  // Boss attack pattern
+            moveBoss(graph, player);  // Move the boss
         } else {
-            handleAllSnakesShooting(graph, player);
-            moveAllCrocodiles(graph, player);
+            // Non-boss actions
+            handleAllSnakesShooting(graph, player);  // Handle snake shooting
+            moveAllCrocodiles(graph, player);  // Move crocodiles
         }
-         displayGraph(graph, player);
-          if (player->position->type == PORTAL) {
-            system(CLEAR);
+
+        displayGraph(graph, player);  // Display the current game state
+
+        // Check if player reaches portal
+        if (player->position->type == PORTAL) {
+            system(CLEAR);  // Clear the screen
             printf("\n" BOLD CYAN " Vous avez atteint le portail!" RESET "\n");
-            printf("Que souhaitez-vous faire?\n");
-            printf("1. Entrer dans l'arene du boss\n");
-            printf("2. Continuer d'explorer la carte actuelle\n");
-            printf("\nVotre choix (1 ou 2): ");
-
-            char choice = _getch();
+            printf("What would you like to do?\n");
+            printf("1. Enter the boss arena\n");
+            printf("2. Continue exploring the current map\n");
+            printf("\nYour choice (1 or 2): ");
+            
+            char choice = _getch();  // Get user input
             if (choice == '1') {
-                player->readyForBoss = 1;
+                player->readyForBoss = 1;  // Ready for boss battle
                 return;
             }
         }
-
-
-
-        if (boss.isActive) printf("PV: %d | Boss PV: %d\n", player->health,  boss.health);
-        printf("[z] Haut, [s] Bas, [q] Gauche, [d] Droite, [f] Tirer, [i] Inventaire\n");
-        printf("[u] Utiliser pack de sante, [c] casser, [x] Quitter, [r] checkpoint\n");
-
-        input = _getch();
-        switch (input) {
-            case 'x':
-                return;
-            case 'f': {
-                printf("Direction du tir ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
-                char shootDirection = _getch();
-                shootBullet(player, graph, shootDirection);
-                break;
-            }
-            case 'i':
-                displayInventory(player);
-                break;
-            case 'u':
-                useHealthPack(player);
-                break;
-            case 'c': {
-                printf("Direction des epines ? [z] Haut, [s] Bas, [q] Gauche, [d] Droite\n");
-                char breakDirection = _getch();
-                breakThorns(player, graph, breakDirection);
-                break;
-            }
-            case 'r':
-            returnToLastCheckpoint(player);
-            break;
-            default:
-                movePlayer(player, input, graph);
-                break;
-        }
-
-        dangerWarning(player, graph);
-        usleep(200000);
     }
 }
+
+
+
+      if (boss.isActive) printf("HP: %d | Boss HP: %d\n", player->health, boss.health);  // Display player and boss health
+      printf("[z] Up, [s] Down, [q] Left, [d] Right, [f] Shoot, [i] Inventory\n");
+      printf("[u] Use health pack, [c] Break thorns, [x] Quit, [r] Return to checkpoint\n");
+
+     input = _getch();  // Wait for user input
+    switch (input) {
+    case 'x': 
+        return;  // Quit the game
+    case 'f': {
+        printf("Shoot direction? [z] Up, [s] Down, [q] Left, [d] Right\n");
+        char shootDirection = _getch();  // Get shoot direction
+        shootBullet(player, graph, shootDirection);  // Shoot bullet
+        break;
+    }
+     case 'i':
+        displayInventory(player);  // Display inventory
+        break;
+     case 'u':
+        useHealthPack(player);  // Use health pack
+        break;
+     case 'c': {
+        printf("Thorn direction? [z] Up, [s] Down, [q] Left, [d] Right\n");
+        char breakDirection = _getch();  // Get thorn breaking direction
+        breakThorns(player, graph, breakDirection);  // Break thorns
+        break;
+    }
+    case 'r':
+        returnToLastCheckpoint(player);  // Return to last checkpoint
+        break;
+    default:
+        movePlayer(player, input, graph);  // Move player
+        break;
+}
+
+dangerWarning(player, graph);  // Display danger warning
+usleep(200000);  // Wait for a short period
+ }
+}
 void addHighScore(const char *name, int score) {
+    // Create a new node for the score
     HighScoreNode *newNode = (HighScoreNode*)malloc(sizeof(HighScoreNode));
     strcpy(newNode->name, name);
     newNode->score = score;
     newNode->next = NULL;
 
+    // Insert at the head if necessary
     if (head == NULL || head->score < score) {
         newNode->next = head;
         head = newNode;
     } else {
+        // Find the correct position for the new score
         HighScoreNode *current = head;
         while (current->next != NULL && current->next->score >= score) {
             current = current->next;
@@ -1418,74 +1432,73 @@ void addHighScore(const char *name, int score) {
 }
 
 void displayHighScores() {
-    system(CLEAR);
-    printf("\n" BOLD " HIGH SCORES " RESET "\n\n");
-    HighScoreNode *current = head;
-    int rank = 1;
-    while (current != NULL && rank <= 10) {  // Show only top 10 scores
-        printf("%d. %s: %d\n", rank, current->name, current->score);
-        current = current->next;
-        rank++;
+    system(CLEAR);  // Clear the screen
+    printf("\n" BOLD " HIGH SCORES " RESET "\n\n");  // Display title in bold
+
+    HighScoreNode *current = head;  // Start from the head of the list
+    int rank = 1;  // Initialize rank to 1
+
+    // Display top 10 scores
+    while (current != NULL && rank <= 10) {
+        printf("%d. %s: %d\n", rank, current->name, current->score);  // Print rank, name, and score
+        current = current->next;  // Move to next node
+        rank++;  // Increment rank
     }
-    printf("\nAppuyez sur une touche pour continuer...\n");
-    _getch();
+
+    printf("\nPress any key to continue...\n");  // Prompt user to continue
+    _getch();  // Wait for user input (Windows-specific)
 }
+
 
 
 int playAgain() {
-    system(CLEAR);
-    printf("\nVoulez-vous rejouer ? (o/n): ");
-    char choice = _getch();
-    return (choice == 'o' || choice == 'O');
+    system(CLEAR);  // Clear screen
+    printf("\nDo you want to play again? (y/n): ");  // Ask
+    char choice = _getch();  // Get input
+    return (choice == 'o' || choice == 'O');  // Return true for 'o' or 'O'
 }
+
+
 
 int main() {
     char playerName[MAX_NAME_LENGTH];
     int continueGame = 1;
 
     while (continueGame) {
-        system(CLEAR);
-        printf("\n" BOLD " NOUVEAU JEU " RESET "\n\n");
-        printf("Entrez votre nom (max %d caracteres): ", MAX_NAME_LENGTH - 1);
-        scanf("%s", playerName);
+        system(CLEAR);  // Clear screen
+        printf("\n" BOLD " NEW GAME " RESET "\n\n");
+        printf("Enter your name (max %d chars): ", MAX_NAME_LENGTH - 1);
+        scanf("%s", playerName);  // Get player name
 
         Node* graph[ROWS][COLS];
         Player player;
         strcpy(player.name, playerName);
 
-        DifficultyNode* difficultyTree = buildDifficultyTree();
-        GameConfig* gameConfig = getDifficultyChoices(difficultyTree);
+        DifficultyNode* difficultyTree = buildDifficultyTree();  // Build difficulty tree
+        GameConfig* gameConfig = getDifficultyChoices(difficultyTree);  // Get game config
 
-        // Initialize game with selected configuration
-        initializeGame(graph, &player, gameConfig);
+        initializeGame(graph, &player, gameConfig);  // Initialize game
 
-        // Main game loop
-        gameLoop(graph, &player);
+        gameLoop(graph, &player);  // Main game loop
 
-        // Boss battle
-        if (player.readyForBoss && player.health > 0) {
+        if (player.readyForBoss && player.health > 0) {  // Boss battle
             system(CLEAR);
-            printf("\n" BOLD YELLOW " Preparez-vous pour le combat final !" RESET "\n");
-            printf("Appuyez sur une touche pour continuer...\n");
-            _getch();
-
-            initializeBoss(graph, &player, bossMap);
-            gameLoop(graph, &player);
+            printf("\n" BOLD YELLOW " Get ready for the final fight! " RESET "\n");
+            _getch();  // Wait for input
+            initializeBoss(graph, &player, bossMap);  // Initialize boss
+            gameLoop(graph, &player);  // Continue game
         }
 
-        // Add score to high scores
-        addHighScore(player.name, player.score);
+        addHighScore(player.name, player.score);  // Save score
 
-        // Display final score and high scores
         system(CLEAR);
-        printf("\n" BOLD " Partie terminée !" RESET "\n");
-        printf("Score final: %d\n\n", player.score);
-        printf("Appuyez sur une touche pour voir les meilleurs scores...\n");
-        _getch();
+        printf("\n" BOLD " Game Over! " RESET "\n");
+        printf("Final score: %d\n\n", player.score);
+        printf("Press any key to view high scores...\n");
+        _getch();  // Wait for input
+        displayHighScores();  // Show high scores
 
-        displayHighScores();
-
-        // Cleanup
+        // Cleanup resources
         cleanupGraph(graph);
         cleanupCrocodiles();
         cleanupSnakes();
@@ -1493,16 +1506,14 @@ int main() {
         freeDifficultyTree(difficultyTree);
         free(gameConfig);
 
-
-        // Ask to play again
-        continueGame = playAgain();
+        continueGame = playAgain();  // Ask to play again
     }
 
-    // Final cleanup of high scores list
+    // Cleanup high scores list
     while (head != NULL) {
         HighScoreNode *temp = head;
         head = head->next;
-        free(temp);
+        free(temp);  // Free high score nodes
     }
 
     return 0;
